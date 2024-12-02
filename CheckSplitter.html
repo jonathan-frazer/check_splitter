@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Check Splitter</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js"></script>
+<script async src="https://docs.opencv.org/4.5.4/opencv.js" onload="onOpenCvReady();"></script>
+
+<style>
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background-color: #1f1f1f;
+  }
+  #formContainer {
+    width: 80%;
+    max-width: 800px;
+    padding: 20px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background-color: aliceblue;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  }
+  form {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  form p {
+    text-align: center;
+  }
+  #imageContainer {
+    margin-top: 20px;
+  }
+  #masterListContainer {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    max_width: 800;
+    margin-top: 20px;
+    text-align: center;
+    border: 1px solid #000000;
+    background-color: #1f1f1f;
+    color: aliceblue;
+    padding: 10px;
+    
+  }
+  #masterList {
+    margin: 0; /* Reset margin to exclude it from being centered */
+    padding: 0; /* Reset padding */
+    text-align: left;
+    list-style-type: none;
+  }
+</style>
+</head>
+<body>
+  
+  <div id="formContainer">
+    <form>
+      <h1>Check Splitter</h1>
+      <p>
+        Have you Ever Been Annoyed by having to Split a Check. Well Worry no longer,<br> 
+        This Nifty Program instantly isolates numbers, and adds them up.<br>
+      </p>
+
+      <p>
+        <label for="imageUpload">Upload Check:</label>
+        <input type="file" id="imageUpload" accept="image/*">
+      </p>
+
+      <p>
+        This Button Will Display your Check And Identify it's prices<br>
+        <button type="button" onclick="processImage()">Process Image</button>
+      </p>
+      <br><br><br>   
+      <div id="masterListContainer"></div>
+      <p id="buttonParagraph"></p>
+      <div id="imageContainer"></div>
+      
+
+    </form>
+  </div> 
+
+    
+  <script>
+let numbers = []
+let masterList = [0.0]
+let masterIndex = 0
+
+// Function to be called when OpenCV.js is ready
+function onOpenCvReady() {
+  console.log("Ready");
+}
+
+function addToMasterList() {
+    // Add the sum to the masterList
+    masterList.push(0.0);
+    updateMasterList();
+    masterIndex++;    
+    console.log("Master List:", masterList);
+}
+
+function updateMasterList() {
+  const masterListElement = document.getElementById('masterList');
+  masterListElement.innerHTML = ''; // Clear previous content
+  
+  // Add each sum to the masterList display
+  masterList.forEach((sum, index) => {
+    const listItem = document.createElement('li');
+    listItem.innerHTML = `Person ${index + 1}: <b>₹${sum.toFixed(2)}<b>`;
+    masterListElement.appendChild(listItem);
+  });
+}
+
+function processImage() {
+  const fileInput = document.getElementById('imageUpload');
+  
+  if (fileInput.files.length > 0) {
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+    
+    // Define the onload event handler
+    reader.onload = function(event) {
+      const imageData = event.target.result; // Access the image data
+      
+      // Create a new image element
+      const img = new Image();
+      img.onload = function() {
+        // Set the desired width and height for scaling
+        const maxWidth = 800; // Example width
+        const maxHeight = 600; // Example height
+        
+        // Calculate the scaling ratio
+        let scaleRatio = 1;
+        if (img.width > maxWidth || img.height > maxHeight) {
+          scaleRatio = Math.min(maxWidth / img.width, maxHeight / img.height);
+        }
+        
+        // Calculate the scaled dimensions
+        const scaledWidth = img.width * scaleRatio;
+        const scaledHeight = img.height * scaleRatio;
+        
+        // Create a canvas element
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Set canvas dimensions to match the scaled image
+        canvas.width = scaledWidth;
+        canvas.height = scaledHeight;
+        
+        // Draw the scaled image onto the canvas
+        ctx.drawImage(img, 0, 0, scaledWidth, scaledHeight);
+        
+        // Convert the canvas content to a PNG image
+        const pngImageData = canvas.toDataURL('image/png');
+        
+        // Call a function to recognize text in the PNG image
+        processImageForOCR(pngImageData);
+      };
+      
+      // Set the src attribute of the image element to the image data
+      img.src = imageData;
+    };
+    
+    // Read the file as a data URL
+    reader.readAsDataURL(file);
+  } else {
+    alert('Please select an image file.');
+  }
+}
+
+
+async function processImageForOCR(imageData) {
+  // Process the Image Data
+  const grayImageData = await convertToGrayscale(imageData);
+  const binaryImageData = await binarizeImage(grayImageData);
+  // Recognize Text
+  recognizeText(binaryImageData);
+}
+
+// Function to convert the image data to grayscale
+function convertToGrayscale(imageData) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = this.width;
+      canvas.height = this.height;
+      ctx.drawImage(this, 0, 0);
+      
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const pixels = imageData.data;
+
+      // Convert to grayscale
+      for (let i = 0; i < pixels.length; i += 4) {
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        const gray = 0.2989 * r + 0.5870 * g + 0.1140 * b; // Using luminance formula
+        pixels[i] = pixels[i + 1] = pixels[i + 2] = gray;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      const grayscaleImageData = canvas.toDataURL();
+      resolve(grayscaleImageData);
+    };
+    img.src = imageData;
+  });
+}
+
+function binarizeImage(imageData) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = this.width;
+      canvas.height = this.height;
+      ctx.drawImage(this, 0, 0);
+      
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const pixels = imageData.data;
+
+      // Convert to binary using a threshold value (e.g., 128)
+      const threshold = 132;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        const gray = 0.2989 * r + 0.5870 * g + 0.1140 * b; // Luminance formula
+        const binaryValue = gray > threshold ? 255 : 0;
+        pixels[i] = pixels[i + 1] = pixels[i + 2] = binaryValue;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      const binaryImageData = canvas.toDataURL();
+      resolve(binaryImageData);
+    };
+    img.src = imageData;
+  });
+}
+
+async function recognizeText(imageData) {
+  const { data: { text, hocr } } = await Tesseract.recognize(
+    imageData,
+    'eng', // Language for text recognition
+    { logger: m => console.log(m), hocr: true } // Optional logger function and hocr output
+  );
+
+  // Display the recognized text
+  document.getElementById('imageContainer').innerHTML = text;
+  numbers = extractNumbers(text);
+
+  // Extract bounding boxes of digits from the hOCR output
+  const digitBoxes = extractDigitBoxes(hocr);
+
+  // Overlay the original image with highlighted regions containing the recognized digits
+  highlightDigits(imageData, digitBoxes);
+}
+
+function extractNumbers(text) {
+  // Use regular expression to extract numbers from the text
+  return text.match(/\b\d+(\.\d+)?\b/g) || [];
+}
+
+function extractDigitBoxes(hocr) {
+  const digitBoxes = [];
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(hocr, 'text/html');
+  const spans = doc.querySelectorAll('span.ocrx_word');
+
+  spans.forEach(span => {
+    const title = span.getAttribute('title');
+    if (title && /\b\d+\b/.test(span.textContent)) {
+      const bboxMatch = title.match(/bbox (\d+) (\d+) (\d+) (\d+)/);
+      if (bboxMatch) {
+        const [_, left, top, right, bottom] = bboxMatch.map(Number);
+        digitBoxes.push({ left, top, right, bottom });
+      }
+    }
+  });
+
+  return digitBoxes;
+}
+
+function highlightDigits(imageData, digitBoxes) {
+  const img = new Image();
+  img.onload = function() {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = this.width;
+    canvas.height = this.height;
+    ctx.drawImage(this, 0, 0);
+
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 2;
+    digitBoxes.forEach((box, index) => {
+      ctx.strokeRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+
+      // Add event listener for mouse clicks
+      canvas.addEventListener('click', function(event) {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
+
+        // Check if the click is inside the current box
+        if (mouseX >= box.left && mouseX <= box.right && mouseY >= box.top && mouseY <= box.bottom) {
+          masterList[masterIndex] += parseFloat(numbers[index]);
+          console.log("Sum : ", masterList);
+          updateMasterList();
+
+          // Clear the canvas and redraw the image without the highlight
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          
+          // Redraw all boxes except the one clicked
+          digitBoxes.forEach((otherBox, i) => {
+            if (i !== index) {
+              ctx.strokeRect(otherBox.left, otherBox.top, otherBox.right - otherBox.left, otherBox.bottom - otherBox.top);
+            }
+          });
+        }
+        
+      });
+    });
+
+    const buttonParagraph = document.getElementById('buttonParagraph');
+    //Add New HTML Data
+    buttonParagraph.innerHTML = `
+    <button type="button" onclick="addToMasterList()">Next Person</button>
+    `;
+
+    // Add Sum Total and The List of People Owed
+    const masterListContainer = document.getElementById('masterListContainer');
+    masterListContainer.innerHTML = `
+      <strong>Sum Total</strong>
+      <br>
+      <ul id="masterList"></ul>
+    `;
+    updateMasterList()
+
+    //Add Image to the HTML page
+    const imageContainer = document.getElementById('imageContainer');
+    imageContainer.innerHTML = '';
+    imageContainer.appendChild(canvas);
+
+    //Create a Reset Tally Button
+    const resetTallyButton = document.createElement('button');
+    resetTallyButton.textContent = 'Reset Tally';
+    resetTallyButton.type = 'button';
+    resetTallyButton.onclick = function() 
+    {
+      //Redraw All boxes
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      digitBoxes.forEach((otherBox, i) => {
+              ctx.strokeRect(otherBox.left, otherBox.top, otherBox.right - otherBox.left, otherBox.bottom - otherBox.top);
+          });
+
+      //Reset Tally 
+      masterList = [0.0];
+      masterIndex = 0;
+
+      updateMasterList();          
+    };
+    // Append the button before the canvas
+    buttonParagraph.appendChild(resetTallyButton);
+    
+  };
+  img.src = imageData;
+}
+</script> 
+</body>
+</html>
